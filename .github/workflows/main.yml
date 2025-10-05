@@ -1,6 +1,9 @@
 name: Run Python Script
 
-on: [push]
+on:
+  push:
+    branches:
+      - add-pca-visualization  # only run this workflow when this branch receives a push
 
 jobs:
   run-python:
