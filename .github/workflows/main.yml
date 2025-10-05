@@ -18,4 +18,4 @@ jobs:
           if test -f requirements.txt; then pip install -r requirements.txt; fi
 
       - name: Run your script
-        run: python improvedsegmenterwithpca.py
+        run: python src/improvedsegmenterwithpca.py
