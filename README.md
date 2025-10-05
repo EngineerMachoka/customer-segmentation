@@ -2,7 +2,7 @@
 
 Segment customers based on quantity and total amount spent using K-Means clustering.
 
-Further analysis on the K-Means with standardization, elbow + silhouette methods for optimal k, is performed
+Further analysis on the K-Means with standardization, elbow + silhouette methods for optimal k, performed
 
 
 
