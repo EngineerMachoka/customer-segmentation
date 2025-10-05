@@ -60,10 +60,10 @@ Key steps include:
 
 
 
-\ 📊 This helps identify customer patterns such as high spenders, bulk buyers, and potential churners — useful for marketing, loyalty programs, or targeting campaigns.
+ 📊 This helps identify customer patterns such as high spenders, bulk buyers, and potential churners — useful for marketing, loyalty programs, or targeting campaigns.
 
 \
-\ 📊 Customer Segmentation Visualization
+ 📊 Customer Segmentation Visualization
 
 
 
@@ -181,9 +181,9 @@ Segment 3 – High recency, low values → at-risk or churned customers
 
 \- 4 customer segments discovered using RFM + K-Means
 
-\-Clustering was validated using both Elbow and Silhouette methods
+\- Clustering was validated using both Elbow and Silhouette methods
 
-\-Insights can be used for personalized marketing or retention strategies
+\- Insights can be used for personalized marketing or retention strategies
 
 # 📈 Business Value:
 
