@@ -31,9 +31,9 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 # === Load Data ===
 if not os.path.exists(file_path):
-    raise FileNotFoundError(f"❌ File not found: {file_path}")
+    raise FileNotFoundError(f"File not found: {file_path}")
 
-print("📊 Reading data...")
+print("Reading data...")
 data = pd.read_excel(file_path)
 data.drop_duplicates(inplace=True)
 data.dropna(subset=['CustomerID'], inplace=True)
@@ -127,4 +127,4 @@ plt.close()
 
 # === Export CSV ===
 rfm.to_csv(csv_output_path, index=False)
-print(f"✅ Segmentation complete. Results saved to:\n{csv_output_path}")
+print(f"Segmentation complete. Results saved to:\n{csv_output_path}")
