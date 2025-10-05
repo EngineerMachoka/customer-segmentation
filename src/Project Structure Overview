@@ -1,0 +1,21 @@
+customer-segmentation-pipeline/
+│
+├── data/                     # [optional] sample data
+│
+├── outputs/                  # Plots, CSVs go here
+│
+├── segmentation/             # Core Python package
+│   ├── __init__.py
+│   ├── config.py             # Settings or config loading
+│   ├── pipeline.py           # Main run_pipeline() logic
+│   ├── visualizations.py     # Plotting functions
+│   └── utils.py              # File loading, directory creation
+│
+├── run_pipeline.py           # Script to trigger pipeline
+│
+├── requirements.txt          # All needed libraries
+│
+├── README.md                 # Project documentation
+│
+└── tests/                    # Unit tests
+    └── test_pipeline.py
