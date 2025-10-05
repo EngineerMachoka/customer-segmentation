@@ -1,4 +1,4 @@
-# Customer-Segmentation
+# Customer Segmentation
 
 Segment customers based on quantity and total amount spent using K-Means clustering.
 
