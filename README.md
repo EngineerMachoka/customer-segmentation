@@ -119,7 +119,7 @@ In this project:
 
 k = 4 also had one of the highest silhouette scores, confirming the elbow method result.
 
-# 3. Segment Scatterplot (rfm_segmentation.png)
+# 3. Segment Scatterplot
 
 Purpose: Visualizes the final customer segments in RFM space.
 
