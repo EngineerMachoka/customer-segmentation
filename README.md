@@ -128,7 +128,7 @@ Purpose: Visualizes the final customer segments in RFM space.
 Colors: Each color represents a different customer segment.
 Red 'X' markers represent cluster centroids.
 
-# Interpretation:
+# 🟢 Interpretation:
 
 Customers in the bottom-right (low recency, high monetary) are likely high-value active customers.
 
