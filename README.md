@@ -237,4 +237,13 @@ Ready to scale into a dashboard or production tool
 
 \## 📁 Project Structure
 
+\
+✨ Author
 
+Clinton Machoka
+🚀 Aerospace Engineer | Data Analyst | Big Data Engineer
+📧 clintonmachoka@mail.com
+
+🔗 LinkedIn
+
+📂 GitHub
