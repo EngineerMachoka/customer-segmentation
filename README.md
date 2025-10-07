@@ -1,5 +1,3 @@
-# Customer Segmentation
-
 # Customer Intelligence Dashboard
 
 📊 Tableau dashboard based on RFM analysis and clustering (KMeans).
