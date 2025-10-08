@@ -6,10 +6,10 @@ jobs:
   run-python:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout `add-pca-visualization` branch
+      - name: Checkout `bayesian_regression` branch
         uses: actions/checkout@v3
         with:
-          ref: add-pca-visualization
+          ref: bayesian_regression
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -21,7 +21,7 @@ jobs:
           if test -f requirements.txt; then pip install -r requirements.txt; fi
 
       - name: Run segmentation script
-        run: python src/improvedsegmenterwithpca.py
+        run: python src/bayesian_regression.py
 
       - name: Commit and push outputs
         env:
@@ -31,4 +31,4 @@ jobs:
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add outputs/*.png outputs/*.csv
           git commit -m "Add generated plots and CSV [auto]" || echo "No changes to commit"
-          git push origin add-pca-visualization
+          git push origin bayesian_regression
