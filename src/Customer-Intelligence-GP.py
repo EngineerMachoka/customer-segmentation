@@ -7,8 +7,8 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
 from sklearn.decomposition import PCA
-import pymc3 as pm
 import joblib
+import statsmodels.api as sm
 
 # === Paths ===
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -27,7 +27,7 @@ pca_variance_path = os.path.join(OUTPUT_DIR, 'pca_variance_v2.png')
 rfm_plot_path = os.path.join(OUTPUT_DIR, 'rfm_segmentation_v2.png')
 pca_plot_path = os.path.join(OUTPUT_DIR, 'pca_segmentation_v2.png')
 gaussian_path = os.path.join(OUTPUT_DIR, 'gaussian_iqr_plot_v2.png')
-bayesian_path = os.path.join(OUTPUT_DIR, 'bayesian_regression_v2.png')
+regression_path = os.path.join(OUTPUT_DIR, 'ols_regression_v2.png')
 csv_output_path = os.path.join(OUTPUT_DIR, 'customers_segmented_v2.csv')
 metrics_output_path = os.path.join(OUTPUT_DIR, 'kmeans_metrics_v2.csv')
 cluster_profile_path = os.path.join(OUTPUT_DIR, 'cluster_profiles_v2.csv')
@@ -54,6 +54,18 @@ rfm = data.groupby('CustomerID').agg(
     Frequency=('InvoiceNo', 'nunique'),
     Monetary=('total_spent', 'sum')
 ).reset_index()
+
+# === Outlier Detection (Custom IQR Multiplier) ===
+iqr_multiplier = 0.74
+Q1 = rfm['Monetary'].quantile(0.25)
+Q3 = rfm['Monetary'].quantile(0.75)
+IQR = Q3 - Q1
+lower_bound = Q1 - iqr_multiplier * IQR
+upper_bound = Q3 + iqr_multiplier * IQR
+
+rfm['MonetaryOutlier'] = rfm['Monetary'].apply(
+    lambda x: 'Outlier' if x < lower_bound or x > upper_bound else 'Normal'
+)
 
 # === Standardization ===
 scaler = StandardScaler()
@@ -94,7 +106,7 @@ plt.close()
 
 # === Auto-select optimal k ===
 optimal_k = np.argmax(silhouette_scores) + 2
-print(f"✅ Automatically selected optimal_k = {optimal_k} based on silhouette score.")
+print(f"Automatically selected optimal_k = {optimal_k} based on silhouette score.")
 
 # === KMeans Clustering ===
 kmeans = KMeans(n_clusters=optimal_k, n_init=10, random_state=42)
@@ -161,46 +173,34 @@ plt.tight_layout()
 plt.savefig(pca_plot_path)
 plt.close()
 
-# === Gaussian Distribution with IQR for Monetary ===
-Q1 = rfm['Monetary'].quantile(0.25)
-Q3 = rfm['Monetary'].quantile(0.75)
-IQR = Q3 - Q1
-lower_bound, upper_bound = Q1 - 1.5*IQR, Q3 + 1.5*IQR
-
+# === Monetary Distribution with Custom IQR ===
 plt.figure(figsize=(8, 4))
 sns.histplot(rfm['Monetary'], kde=True, color='skyblue')
-plt.axvline(lower_bound, color='red', linestyle='--', label='Lower IQR Bound')
-plt.axvline(upper_bound, color='red', linestyle='--', label='Upper IQR Bound')
-plt.title('Monetary Distribution with IQR Outlier Bounds')
+plt.axvline(lower_bound, color='red', linestyle='--', label=f'Lower IQR Bound ({lower_bound:.2f})')
+plt.axvline(upper_bound, color='red', linestyle='--', label=f'Upper IQR Bound ({upper_bound:.2f})')
+plt.title(f'Monetary Distribution with Custom IQR Multiplier = {iqr_multiplier}')
 plt.legend()
 plt.tight_layout()
 plt.savefig(gaussian_path)
 plt.close()
 
-# === Bayesian Linear Regression (Monetary ~ Frequency) ===
-with pm.Model() as model:
-    alpha = pm.Normal('alpha', mu=0, sigma=10)
-    beta = pm.Normal('beta', mu=0, sigma=10)
-    sigma = pm.HalfNormal('sigma', sigma=1)
-    
-    mu = alpha + beta * rfm['Frequency']
-    y_obs = pm.Normal('y_obs', mu=mu, sigma=sigma, observed=rfm['Monetary'])
+# === Linear Regression: Monetary ~ Frequency ===
+X = sm.add_constant(rfm['Frequency'])
+y = rfm['Monetary']
+model = sm.OLS(y, X).fit()
 
-    trace = pm.sample(1000, tune=1000, cores=1, progressbar=False)
+print(model.summary())  # Optional: comment this out for GitHub CI/CD
 
-# Plot posterior predictive regression line
-freq_range = np.linspace(rfm['Frequency'].min(), rfm['Frequency'].max(), 100)
-pred_monetary = trace['alpha'].mean() + trace['beta'].mean() * freq_range
-
+# Plot regression
 plt.figure(figsize=(8, 5))
-plt.scatter(rfm['Frequency'], rfm['Monetary'], alpha=0.5, label='Data')
-plt.plot(freq_range, pred_monetary, color='red', label='Bayesian Regression')
-plt.title('Bayesian Linear Regression: Monetary ~ Frequency')
+sns.scatterplot(x=rfm['Frequency'], y=rfm['Monetary'], alpha=0.5, label='Data')
+plt.plot(rfm['Frequency'], model.predict(X), color='red', label='OLS Regression')
+plt.title('OLS Linear Regression: Monetary ~ Frequency')
 plt.xlabel('Frequency')
 plt.ylabel('Monetary')
 plt.legend()
 plt.tight_layout()
-plt.savefig(bayesian_path)
+plt.savefig(regression_path)
 plt.close()
 
 # === Export Final Data ===
