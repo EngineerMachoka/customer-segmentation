@@ -19,12 +19,21 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: Install dependencies (clean numpy/pandas)
+      - name: Upgrade pip and install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libopenblas-dev liblapack-dev
+
+      - name: Clean install numpy and pandas
         run: |
           pip install --upgrade pip
           pip uninstall -y numpy pandas || true
           pip install --no-cache-dir numpy==1.24.4 pandas==1.5.3
+
+      - name: Install remaining dependencies
+        run: |
           pip install -r requirements.txt
 
-      - name: Run Customer Intelligence script
-        run: python src/Customer-Intelligence-GP.py
+      - name: Run Customer Intelligence pipeline
+        run: |
+          python src/Customer-Intelligence-GP.py
