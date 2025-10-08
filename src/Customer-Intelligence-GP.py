@@ -205,4 +205,4 @@ plt.savefig(bayesian_path)
 plt.close()
 
 # === Export Final Data ===
-rfm.to_csv(csv_output_path, index
+rfm.to_csv(csv_output_path, index=False)
