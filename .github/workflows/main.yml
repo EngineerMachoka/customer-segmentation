@@ -1,4 +1,4 @@
-name: Customer Intelligence CI
+name: Python CI
 
 on:
   push:
@@ -8,32 +8,37 @@ on:
 
 jobs:
   build:
+
     runs-on: ubuntu-latest
 
+    strategy:
+      matrix:
+        python-version: [3.10]
+
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
+    - name: Checkout repository
+      uses: actions/checkout@v3
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.10'
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
 
-      - name: Upgrade pip and install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libopenblas-dev liblapack-dev
+    - name: Cache pip
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
 
-      - name: Clean install numpy and pandas
-        run: |
-          pip install --upgrade pip
-          pip uninstall -y numpy pandas || true
-          pip install --no-cache-dir numpy==1.24.4 pandas==1.5.3
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        # Install compatible numpy and dependencies
+        pip install numpy<1.22.2
+        pip install pandas scikit-learn matplotlib seaborn statsmodels openpyxl joblib
 
-      - name: Install remaining dependencies
-        run: |
-          pip install -r requirements.txt
-
-      - name: Run Customer Intelligence pipeline
-        run: |
-          python src/Customer-Intelligence-GP.py
+    - name: Run Customer Segmentation script
+      run: |
+        python src/Customer-Intelligence-GP.py
