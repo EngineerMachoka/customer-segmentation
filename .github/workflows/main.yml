@@ -1,49 +1,29 @@
-name: Run Python Script from specific branch
+name: Python Customer Segmentation CI
 
-on: [push]
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
 
 jobs:
-  run-python:
+  build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout branch
-        uses: actions/checkout@v3
-        with:
-          ref: Customer-Intelligence-Engine-Gaussian-distribution-with-IQR-and-Bayesian-style-KDE
+      - uses: actions/checkout@v3
 
-      - name: Set up Python
+      - name: Set up Python 3.10
         uses: actions/setup-python@v4
         with:
-          python-version: '3.10'
+          python-version: 3.10
 
-      - name: Upgrade pip, setuptools, wheel
-        run: python -m pip install --upgrade pip setuptools wheel
-
-      - name: Fully uninstall numpy & pandas (clear any cache)
+      - name: Upgrade pip and install clean numpy/pandas + other dependencies
         run: |
-          pip uninstall -y numpy pandas || true
-          find ~/.cache/pip -type d -name "*numpy*" -exec rm -rf {} +
-          find ~/.cache/pip -type d -name "*pandas*" -exec rm -rf {} +
-
-      - name: Install compatible numpy and pandas versions
-        run: |
+          python -m pip install --upgrade pip
+          pip uninstall -y numpy pandas
           pip install numpy==1.24.4 pandas==1.5.3
+          pip install -r requirements.txt
 
-      - name: Install PyMC3 and other dependencies
-        run: |
-          pip install pymc3
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-
-      - name: Run segmentation script
+      - name: Run customer segmentation script
         run: python src/Customer-Intelligence-GP.py
-
-      - name: Commit and push outputs
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add outputs/*.png outputs/*.csv || true
-          git diff --cached --quiet || git commit -m "Add generated plots and CSV [auto]"
-          git push origin Customer-Intelligence-Engine-Gaussian-distribution-with-IQR-and-Bayesian-style-KDE
