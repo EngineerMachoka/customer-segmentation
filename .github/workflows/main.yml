@@ -6,10 +6,10 @@ jobs:
   run-python:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout `add-pca-visualization` branch
+      - name: Checkout `Customer-Intelligence-Engine-Gaussian-distribution-with-IQR-and-Bayesian-style-KDE` branch
         uses: actions/checkout@v3
         with:
-          ref: add-pca-visualization
+          ref: Customer-Intelligence-Engine-Gaussian-distribution-with-IQR-and-Bayesian-style-KDE
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -21,7 +21,7 @@ jobs:
           if test -f requirements.txt; then pip install -r requirements.txt; fi
 
       - name: Run segmentation script
-        run: python src/improvedsegmenterwithpca.py
+        run: python src/Customer-Intelligence-GP.py
 
       - name: Commit and push outputs
         env:
