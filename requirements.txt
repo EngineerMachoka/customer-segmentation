@@ -4,4 +4,3 @@ scikit-learn
 matplotlib
 seaborn
 openpyxl
-pymc3
