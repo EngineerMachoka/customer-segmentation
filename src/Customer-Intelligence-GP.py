@@ -7,7 +7,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
 from sklearn.decomposition import PCA
-from sklearn.linear_model import LinearRegression
+import pymc3 as pm
 import joblib
 
 # === Paths ===
@@ -27,7 +27,7 @@ pca_variance_path = os.path.join(OUTPUT_DIR, 'pca_variance_v2.png')
 rfm_plot_path = os.path.join(OUTPUT_DIR, 'rfm_segmentation_v2.png')
 pca_plot_path = os.path.join(OUTPUT_DIR, 'pca_segmentation_v2.png')
 gaussian_path = os.path.join(OUTPUT_DIR, 'gaussian_iqr_plot_v2.png')
-regression_path = os.path.join(OUTPUT_DIR, 'linear_regression_v2.png')
+bayesian_path = os.path.join(OUTPUT_DIR, 'bayesian_regression_v2.png')
 csv_output_path = os.path.join(OUTPUT_DIR, 'customers_segmented_v2.csv')
 metrics_output_path = os.path.join(OUTPUT_DIR, 'kmeans_metrics_v2.csv')
 cluster_profile_path = os.path.join(OUTPUT_DIR, 'cluster_profiles_v2.csv')
@@ -177,25 +177,30 @@ plt.tight_layout()
 plt.savefig(gaussian_path)
 plt.close()
 
-# === Standard Linear Regression (Monetary ~ Frequency) ===
-X = rfm[['Frequency']]
-y = rfm['Monetary']
-reg = LinearRegression()
-reg.fit(X, y)
+# === Bayesian Linear Regression (Monetary ~ Frequency) ===
+with pm.Model() as model:
+    alpha = pm.Normal('alpha', mu=0, sigma=10)
+    beta = pm.Normal('beta', mu=0, sigma=10)
+    sigma = pm.HalfNormal('sigma', sigma=1)
+    
+    mu = alpha + beta * rfm['Frequency']
+    y_obs = pm.Normal('y_obs', mu=mu, sigma=sigma, observed=rfm['Monetary'])
 
-# Prediction line
-freq_range = np.linspace(X.min(), X.max(), 100).reshape(-1, 1)
-pred_monetary = reg.predict(freq_range)
+    trace = pm.sample(1000, tune=1000, cores=1, progressbar=False)
+
+# Plot posterior predictive regression line
+freq_range = np.linspace(rfm['Frequency'].min(), rfm['Frequency'].max(), 100)
+pred_monetary = trace['alpha'].mean() + trace['beta'].mean() * freq_range
 
 plt.figure(figsize=(8, 5))
-plt.scatter(X, y, alpha=0.5, label='Data')
-plt.plot(freq_range, pred_monetary, color='red', label='Linear Regression')
-plt.title('Linear Regression: Monetary ~ Frequency')
+plt.scatter(rfm['Frequency'], rfm['Monetary'], alpha=0.5, label='Data')
+plt.plot(freq_range, pred_monetary, color='red', label='Bayesian Regression')
+plt.title('Bayesian Linear Regression: Monetary ~ Frequency')
 plt.xlabel('Frequency')
 plt.ylabel('Monetary')
 plt.legend()
 plt.tight_layout()
-plt.savefig(regression_path)
+plt.savefig(bayesian_path)
 plt.close()
 
 # === Export Final Data ===
