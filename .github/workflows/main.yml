@@ -1,4 +1,4 @@
-name: Python CI - Customer Segmentation
+name: Python CI
 
 on:
   push:
@@ -15,29 +15,27 @@ jobs:
         python-version: [3.10]
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v3
+      - name: Checkout repository
+        uses: actions/checkout@v3
 
-    - name: Setup Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: ${{ matrix.python-version }}
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
 
-    - name: Cache pip
-      uses: actions/cache@v3
-      with:
-        path: ~/.cache/pip
-        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
-        restore-keys: |
-          ${{ runner.os }}-pip-
+      - name: Cache pip
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
 
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt || \
-        pip install numpy==1.21.6 pandas==1.5.3 scikit-learn==1.3.0 matplotlib==3.7.1 seaborn==0.12.2 \
-        statsmodels==0.14.0 openpyxl==3.1.0 joblib==1.2.0 scipy==1.10.1
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
 
-    - name: Run Customer Segmentation with GPR
-      run: |
-        python src/rfm_segmentation_with_gpr_tableau_ready.py
+      - name: Run Customer Segmentation script
+        run: |
+          python src/Customer-Intelligence-GP.py

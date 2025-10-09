@@ -10,7 +10,6 @@ from sklearn.decomposition import PCA
 from scipy.stats import norm
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RBF, ConstantKernel as C, WhiteKernel
-from sklearn.metrics import mean_squared_error, r2_score
 import joblib
 from mpl_toolkits.mplot3d import Axes3D
 
@@ -155,10 +154,10 @@ for col in ['Recency', 'Frequency', 'Monetary']:
 print("🎨 Generating Tableau-ready segmentation charts...")
 
 segment_palette = {
-    'High Value': '#FF6B6B',
-    'Loyal': '#4ECDC4',
-    'Regular': '#FFD93D',
-    'Churn Risk': '#1A535C'
+    'High Value': '#FF6B6B',   # Red
+    'Loyal': '#4ECDC4',        # Teal
+    'Regular': '#FFD93D',      # Yellow
+    'Churn Risk': '#1A535C'    # Dark Blue
 }
 
 # --- RFM Chart ---
@@ -196,28 +195,20 @@ plt.savefig(os.path.join(OUTPUT_DIR, 'pca_segmentation_tableau_ready.png'), dpi=
 plt.close()
 
 # ============================================
-# GPR: Recency + Frequency → Predict Monetary
+# GAUSSIAN PROCESS REGRESSION (GPR)
 # ============================================
-print("🔥 Training Gaussian Process Regression (GPR)...")
-
+print("🔄 Training Gaussian Process Regression (GPR)...")
 X = rfm_scaled[:, :2]  # Recency & Frequency
 y = rfm['Monetary'].values
 
 kernel = C(1.0, (1e-3, 1e3)) * RBF(length_scale=1.0, length_scale_bounds=(1e-2, 1e2)) + WhiteKernel()
 gpr = GaussianProcessRegressor(kernel=kernel, alpha=1e-6, normalize_y=True, n_restarts_optimizer=3, random_state=42)
 gpr.fit(X, y)
-y_pred, y_std = gpr.predict(X, return_std=True)
+print(f"✅ GPR trained. Kernel: {gpr.kernel_}")
 
+y_pred, y_std = gpr.predict(X, return_std=True)
 rfm['GPR_Predicted_Monetary'] = y_pred
 rfm['GPR_Uncertainty'] = y_std
-
-rmse = np.sqrt(mean_squared_error(y, y_pred))
-r2 = r2_score(y, y_pred)
-
-print(f"✅ GPR trained:")
-print(f"   • RMSE: {rmse:.2f}")
-print(f"   • R²:   {r2:.4f}")
-print(f"   • Kernel: {gpr.kernel_}")
 
 # --- GPR Surface Plot ---
 r = np.linspace(X[:, 0].min(), X[:, 0].max(), 50)
@@ -225,8 +216,7 @@ f = np.linspace(X[:, 1].min(), X[:, 1].max(), 50)
 R, F = np.meshgrid(r, f)
 X_grid = np.column_stack([R.ravel(), F.ravel()])
 Y_mean, Y_std = gpr.predict(X_grid, return_std=True)
-Y_mean = Y_mean.reshape(R.shape)
-Y_std = Y_std.reshape(R.shape)
+Y_mean, Y_std = Y_mean.reshape(R.shape), Y_std.reshape(R.shape)
 
 fig = plt.figure(figsize=(8,6))
 ax = fig.add_subplot(111, projection='3d')
@@ -242,7 +232,7 @@ plt.close()
 # --- GPR Uncertainty Heatmap ---
 plt.figure(figsize=(6,5))
 plt.contourf(R, F, Y_std, levels=20, cmap='coolwarm')
-plt.colorbar(label='Prediction Std. Dev. (Uncertainty)')
+plt.colorbar(label='Uncertainty (std)')
 plt.xlabel('Recency (scaled)')
 plt.ylabel('Frequency (scaled)')
 plt.title('GPR Prediction Uncertainty')
