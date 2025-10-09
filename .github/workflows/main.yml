@@ -1,34 +1,41 @@
-name: Run Python Script from specific branch
+name: Python CI
 
-on: [push]
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
 
 jobs:
-  run-python:
+  build:
     runs-on: ubuntu-latest
-    steps:
-      - name: Checkout `add-pca-visualization` branch
-        uses: actions/checkout@v3
-        with:
-          ref: add-pca-visualization
 
-      - name: Set up Python
+    strategy:
+      matrix:
+        python-version: [3.10]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Setup Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.x'
+          python-version: ${{ matrix.python-version }}
+
+      - name: Cache pip
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
 
       - name: Install dependencies
         run: |
-          if test -f requirements.txt; then pip install -r requirements.txt; fi
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
 
-      - name: Run segmentation script
-        run: python src/improvedsegmenterwithpca.py
-
-      - name: Commit and push outputs
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Run Customer Segmentation script
         run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add outputs/*.png outputs/*.csv
-          git commit -m "Add generated plots and CSV [auto]" || echo "No changes to commit"
-          git push origin add-pca-visualization
+          python src/Customer-Intelligence-GP.py
