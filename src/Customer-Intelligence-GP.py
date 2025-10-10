@@ -1,275 +1,319 @@
-import os
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
-from sklearn.preprocessing import StandardScaler
-from sklearn.cluster import KMeans
-from sklearn.metrics import silhouette_score
-from sklearn.decomposition import PCA
-from scipy.stats import norm
-from sklearn.gaussian_process import GaussianProcessRegressor
-from sklearn.gaussian_process.kernels import RBF, ConstantKernel as C, WhiteKernel
-from sklearn.metrics import mean_squared_error, r2_score
-import joblib
-from mpl_toolkits.mplot3d import Axes3D
+"""
+Customer Segmentation & Predictive Modeling – Fully Commented v9
+---------------------------------------------------------------
+This script:
+• Computes RFM metrics
+• Performs KMeans clustering
+• Reduces dimensions using PCA
+• Generates distribution plots (Full, IQR, Extremes, Top25, Bottom25)
+• Trains Gaussian Process Regression (GPR)
+• Generates automated GPR surface plots highlighting Top25/Bottom25
+• Renames existing output files to prevent overwriting
+• Contains inline + block comments explaining every step
+"""
 
-# ============================================
-# CONFIGURATION
-# ============================================
-AUTO_MODE = True  # Run automatically (non-interactive)
+# ============================
+# IMPORT LIBRARIES
+# ============================
+import os  # For file/directory operations
+import random  # For generating random numbers for file renaming
+import pandas as pd  # For data manipulation
+import numpy as np  # For numerical computations
+import matplotlib.pyplot as plt  # For plotting
+import seaborn as sns  # Enhanced plotting features
+from sklearn.preprocessing import StandardScaler  # Standardize features
+from sklearn.cluster import KMeans  # Clustering algorithm
+from sklearn.metrics import silhouette_score, mean_squared_error, r2_score  # Model evaluation metrics
+from sklearn.decomposition import PCA  # Dimensionality reduction
+from sklearn.gaussian_process import GaussianProcessRegressor  # Gaussian Process Regression
+from sklearn.gaussian_process.kernels import RBF, ConstantKernel as C, WhiteKernel  # GPR kernels
+from scipy.stats import norm  # For Gaussian fitting
+import joblib  # For saving/loading models
+from mpl_toolkits.mplot3d import Axes3D  # 3D plotting
 
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-BASE_DIR = os.path.abspath(os.path.join(SCRIPT_DIR, '..'))
-DATA_DIR = os.path.join(BASE_DIR, 'data')
-OUTPUT_DIR = os.path.join(BASE_DIR, 'outputs')
+# ============================
+# CONFIGURATION & PATHS
+# ============================
+AUTO_MODE = True  # If True, script runs automatically without manual input
 
-DATA_FILE = 'Online Retail.xlsx'
-file_path = os.path.join(DATA_DIR, DATA_FILE)
+# Define directories
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))  # Current script folder
+BASE_DIR = os.path.abspath(os.path.join(SCRIPT_DIR, '..'))  # Project root folder
+DATA_DIR = os.path.join(BASE_DIR, 'data')  # Input data folder
+OUTPUT_DIR = os.path.join(BASE_DIR, 'outputs')  # Output folder
+DISTRIBUTION_DIR = os.path.join(OUTPUT_DIR, 'distributions')  # Folder for distribution plots
 
-# Output paths
-csv_output_path = os.path.join(OUTPUT_DIR, 'customers_segmented_v2.csv')
-xlsx_output_path = os.path.join(OUTPUT_DIR, 'customers_segmented_v2.xlsx')
-metrics_output_path = os.path.join(OUTPUT_DIR, 'kmeans_metrics_v2.csv')
-cluster_profile_path = os.path.join(OUTPUT_DIR, 'cluster_profiles_v2.csv')
-distribution_dir = os.path.join(OUTPUT_DIR, 'distributions')
+# Ensure directories exist
+os.makedirs(DATA_DIR, exist_ok=True)
 os.makedirs(OUTPUT_DIR, exist_ok=True)
-os.makedirs(distribution_dir, exist_ok=True)
+os.makedirs(DISTRIBUTION_DIR, exist_ok=True)
 
-# ============================================
+# ============================
+# RENAME EXISTING FILES TO AVOID OVERWRITE
+# ============================
+def rename_existing_files(folder):
+    """
+    Rename all existing files in a folder by adding a random numeric prefix.
+    This prevents overwriting previously generated outputs.
+    """
+    for root, dirs, files in os.walk(folder):  # Traverse all files in folder
+        for filename in files:  # Loop through each file
+            old_path = os.path.join(root, filename)  # Original file path
+            rand_prefix = str(random.randint(1000, 9999))  # Random 4-digit prefix
+            new_filename = f"{rand_prefix}_{filename}"  # New file name
+            new_path = os.path.join(root, new_filename)  # New full path
+            try:
+                os.rename(old_path, new_path)  # Rename file
+                print(f"📂 Renamed existing file → {new_filename}")  # Confirmation
+            except Exception as e:  # Catch errors
+                print(f"⚠️ Could not rename {filename}: {e}")  # Error message
+
+# Apply renaming to OUTPUT_DIR
+rename_existing_files(OUTPUT_DIR)
+
+# ============================
 # LOAD & CLEAN DATA
-# ============================================
-if not os.path.exists(file_path):
-    raise FileNotFoundError(f"❌ Data file not found: {file_path}")
+# ============================
+DATA_FILE = 'Online Retail.xlsx'  # Input data filename
+DATA_PATH = os.path.join(DATA_DIR, DATA_FILE)  # Full path to input file
 
-print("📦 Loading and preparing data...")
-data = pd.read_excel(file_path)
-data.drop_duplicates(inplace=True)
-data.dropna(subset=['CustomerID'], inplace=True)
+# Check if the file exists
+if not os.path.exists(DATA_PATH):
+    raise FileNotFoundError(f"❌ Data file not found: {DATA_PATH}")  # Stop execution if missing
+
+print("📦 Loading dataset...")  # Inform user
+
+# Load Excel data into pandas DataFrame
+data = pd.read_excel(DATA_PATH)
+data.drop_duplicates(inplace=True)  # Remove duplicate rows
+data.dropna(subset=['CustomerID'], inplace=True)  # Remove rows missing CustomerID
+
+# Calculate total spend per transaction
 data['total_spent'] = data['UnitPrice'] * data['Quantity']
+
+# Keep only positive spend transactions
 data = data[data['total_spent'] > 0]
+
+# Convert InvoiceDate to datetime format
 data['InvoiceDate'] = pd.to_datetime(data['InvoiceDate'])
+
+# Reference date is the latest invoice date
 reference_date = data['InvoiceDate'].max()
 
-# ============================================
-# CREATE RFM FEATURES
-# ============================================
-print("🧮 Generating RFM metrics...")
+# ============================
+# COMPUTE RFM METRICS
+# ============================
+print("🧮 Computing RFM metrics...")
+
+# Aggregate data by CustomerID
 rfm = data.groupby('CustomerID').agg(
-    Recency=('InvoiceDate', lambda x: (reference_date - x.max()).days),
-    Frequency=('InvoiceNo', 'nunique'),
-    Monetary=('total_spent', 'sum')
-).reset_index()
+    Recency=('InvoiceDate', lambda x: (reference_date - x.max()).days),  # Days since last purchase
+    Frequency=('InvoiceNo', 'nunique'),  # Count of unique invoices
+    Monetary=('total_spent', 'sum')  # Total monetary spend
+).reset_index()  # Reset index to make CustomerID a column
 
-# Standardize
-scaler = StandardScaler()
-rfm_scaled = scaler.fit_transform(rfm[['Recency', 'Frequency', 'Monetary']])
+# Standardize RFM features
+scaler = StandardScaler()  # Initialize scaler
+rfm_scaled = scaler.fit_transform(rfm[['Recency','Frequency','Monetary']])  # Scale features
 
-# ============================================
+# ============================
 # FIND OPTIMAL NUMBER OF CLUSTERS
-# ============================================
-print("🔍 Finding optimal cluster count (KMeans)...")
-inertia, silhouette_scores = [], []
-k_range = range(2, 11)
-for k in k_range:
-    km = KMeans(n_clusters=k, n_init=10, random_state=42)
-    labels = km.fit_predict(rfm_scaled)
-    inertia.append(km.inertia_)
-    silhouette_scores.append(silhouette_score(rfm_scaled, labels))
+# ============================
+print("🔍 Determining optimal cluster count...")
 
-metrics_df = pd.DataFrame({'k': list(k_range), 'Inertia': inertia, 'Silhouette': silhouette_scores})
-metrics_df.to_csv(metrics_output_path, index=False)
+# Initialize lists to store KMeans metrics
+inertia = []
+silhouette_scores = []
 
+# Loop through cluster counts from 2 to 10
+for k in range(2, 11):
+    km = KMeans(n_clusters=k, n_init=10, random_state=42)  # KMeans instance
+    labels = km.fit_predict(rfm_scaled)  # Fit model and assign cluster labels
+    inertia.append(km.inertia_)  # Record inertia
+    silhouette_scores.append(silhouette_score(rfm_scaled, labels))  # Record silhouette score
+
+# Save KMeans metrics to CSV
+metrics_df = pd.DataFrame({'k':range(2,11),'Inertia':inertia,'Silhouette':silhouette_scores})
+metrics_df.to_csv(os.path.join(OUTPUT_DIR,'kmeans_metrics_v9.csv'), index=False)
+
+# Select optimal K based on highest silhouette score
 optimal_k = np.argmax(silhouette_scores) + 2
-print(f"✅ Optimal number of clusters determined: {optimal_k}")
+print(f"✅ Optimal clusters determined: {optimal_k}")
 
-# ============================================
-# FINAL CLUSTERING
-# ============================================
-kmeans = KMeans(n_clusters=optimal_k, n_init=10, random_state=42)
-rfm['Segment'] = kmeans.fit_predict(rfm_scaled)
-centroids = scaler.inverse_transform(kmeans.cluster_centers_)
-joblib.dump(scaler, os.path.join(OUTPUT_DIR, 'rfm_scaler.pkl'))
-joblib.dump(kmeans, os.path.join(OUTPUT_DIR, 'kmeans_model.pkl'))
+# ============================
+# FINAL KMEANS CLUSTERING
+# ============================
+kmeans = KMeans(n_clusters=optimal_k, n_init=10, random_state=42)  # Initialize KMeans
+rfm['Segment'] = kmeans.fit_predict(rfm_scaled)  # Assign cluster labels
+centroids = scaler.inverse_transform(kmeans.cluster_centers_)  # Transform centroids back to original scale
 
-# ============================================
-# PCA FOR VISUALIZATION
-# ============================================
-pca = PCA(n_components=2, random_state=42)
-rfm_pca = pca.fit_transform(rfm_scaled)
-rfm['PCA1'], rfm['PCA2'] = rfm_pca[:, 0], rfm_pca[:, 1]
+# Save models
+joblib.dump(scaler, os.path.join(OUTPUT_DIR,'rfm_scaler.pkl'))  # Save scaler
+joblib.dump(kmeans, os.path.join(OUTPUT_DIR,'kmeans_model.pkl'))  # Save KMeans model
 
-# ============================================
-# CLUSTER SUMMARY
-# ============================================
-cluster_summary = rfm.groupby('Segment').agg({
-    'Recency': 'mean', 'Frequency': 'mean', 'Monetary': 'mean', 'CustomerID': 'count'
-}).rename(columns={'CustomerID': 'Count'}).round(1)
+# ============================
+# PCA DIMENSION REDUCTION
+# ============================
+pca = PCA(n_components=2, random_state=42)  # Initialize PCA
+rfm_pca = pca.fit_transform(rfm_scaled)  # Reduce scaled RFM to 2 dimensions
+rfm['PCA1'], rfm['PCA2'] = rfm_pca[:,0], rfm_pca[:,1]  # Store PCA components in DataFrame
+
+# ============================
+# ASSIGN HUMAN-READABLE CLUSTER LABELS
+# ============================
+cluster_summary = rfm.groupby('Segment').agg(
+    Recency='mean',
+    Frequency='mean',
+    Monetary='mean',
+    CustomerID='count'
+).rename(columns={'CustomerID':'Count'}).round(1)
 
 def assign_segment_labels(summary_df):
+    """
+    Rank clusters and assign readable labels: High Value, Loyal, Churn Risk, Regular
+    """
     labels = {}
     monetary_rank = summary_df['Monetary'].rank(method='min', ascending=False)
     recency_rank = summary_df['Recency'].rank(method='min')
     frequency_rank = summary_df['Frequency'].rank(method='min', ascending=False)
     for idx in summary_df.index:
-        if monetary_rank[idx] == 1:
-            labels[idx] = 'High Value'
-        elif frequency_rank[idx] == 1:
-            labels[idx] = 'Loyal'
-        elif recency_rank[idx] == summary_df['Recency'].rank().max():
-            labels[idx] = 'Churn Risk'
+        if monetary_rank[idx]==1:
+            labels[idx]='High Value'
+        elif frequency_rank[idx]==1:
+            labels[idx]='Loyal'
+        elif recency_rank[idx]==summary_df['Recency'].rank().max():
+            labels[idx]='Churn Risk'
         else:
-            labels[idx] = 'Regular'
+            labels[idx]='Regular'
     return labels
 
+# Map labels to clusters
 segment_labels = assign_segment_labels(cluster_summary)
 rfm['SegmentLabel'] = rfm['Segment'].map(segment_labels)
 cluster_summary['Label'] = cluster_summary.index.map(segment_labels)
-cluster_summary.to_csv(cluster_profile_path)
+cluster_summary.to_csv(os.path.join(OUTPUT_DIR,'cluster_profiles_v9.csv'),index=False)
 
-# ============================================
+# ============================
 # DISTRIBUTION PLOTS
-# ============================================
-def plot_distribution_with_iqr(data, column):
-    plt.figure(figsize=(7, 4))
-    sns.histplot(data[column], bins=30, kde=True, color='skyblue', stat='density', edgecolor='black')
-    mu, std = norm.fit(data[column])
-    x = np.linspace(data[column].min(), data[column].max(), 100)
-    p = norm.pdf(x, mu, std)
-    plt.plot(x, p, 'r--', label='Gaussian Fit')
-    q1, q3 = np.percentile(data[column], [25, 75])
-    plt.axvline(q1, color='green', linestyle='--', label='Q1 (25%)')
-    plt.axvline(q3, color='purple', linestyle='--', label='Q3 (75%)')
-    plt.title(f'{column} Distribution with Gaussian Fit')
+# ============================
+def plot_distribution_with_iqr(data,column):
+    """Plot histogram with Gaussian fit and IQR lines"""
+    plt.figure(figsize=(7,4))
+    sns.histplot(data[column],bins=30,kde=True,color='skyblue',edgecolor='black',stat='density')
+    mu,std = norm.fit(data[column])
+    x=np.linspace(data[column].min(),data[column].max(),100)
+    plt.plot(x,norm.pdf(x,mu,std),'r--',label='Gaussian Fit')
+    q1,q3 = np.percentile(data[column],[25,75])
+    plt.axvline(q1,color='green',linestyle='--',label='Q1')
+    plt.axvline(q3,color='purple',linestyle='--',label='Q3')
+    plt.title(f'{column} Distribution')
     plt.legend()
     plt.tight_layout()
-    plt.savefig(os.path.join(distribution_dir, f"{column}_distribution.png"), dpi=200)
+    plt.savefig(os.path.join(DISTRIBUTION_DIR,f"{column}_distribution.png"),dpi=200)
     plt.close()
 
-for col in ['Recency', 'Frequency', 'Monetary']:
-    plot_distribution_with_iqr(rfm, col)
+def plot_all_distributions(data,column):
+    """Generate Full, IQR, Extremes, Top25, Bottom25 plots"""
+    q1,q3 = np.percentile(data[column],[25,75])
+    full = data[column]
+    iqr = full[(full>=q1)&(full<=q3)]
+    extremes = pd.concat([full[full<=q1],full[full>=q3]])
+    top25 = full[full>=q3]
+    bottom25 = full[full<=q1]
 
-# ============================================
-# TABLEAU-READY CLUSTER VISUALIZATION
-# ============================================
-print("🎨 Generating Tableau-ready segmentation charts...")
+    # Full vs IQR
+    fig,axes = plt.subplots(1,2,figsize=(10,4))
+    sns.histplot(full,bins=30,kde=True,color='skyblue',ax=axes[0],edgecolor='black',stat='density')
+    axes[0].set_title('Full')
+    sns.histplot(iqr,bins=20,kde=True,color='orange',ax=axes[1],edgecolor='black',stat='density')
+    axes[1].set_title('IQR (Middle 50%)')
+    plt.tight_layout()
+    plt.savefig(os.path.join(DISTRIBUTION_DIR,f"{column}_iqr_comparison.png"),dpi=200)
+    plt.close()
 
-segment_palette = {
-    'High Value': '#FF6B6B',
-    'Loyal': '#4ECDC4',
-    'Regular': '#FFD93D',
-    'Churn Risk': '#1A535C'
-}
+    # Extremes contrast
+    fig,axes = plt.subplots(1,3,figsize=(14,4))
+    sns.histplot(full,bins=30,kde=True,color='skyblue',ax=axes[0],edgecolor='black',stat='density')
+    axes[0].set_title('Full')
+    sns.histplot(iqr,bins=20,kde=True,color='orange',ax=axes[1],edgecolor='black',stat='density')
+    axes[1].set_title('IQR')
+    sns.histplot(extremes,bins=20,kde=True,color='crimson',ax=axes[2],edgecolor='black',stat='density')
+    axes[2].set_title('Extremes (Top+Bottom 25%)')
+    plt.tight_layout()
+    plt.savefig(os.path.join(DISTRIBUTION_DIR,f"{column}_extremes_contrast.png"),dpi=200)
+    plt.close()
 
-# --- RFM Chart ---
-plt.figure(figsize=(8,5))
-for label, color in segment_palette.items():
-    subset = rfm[rfm['SegmentLabel'] == label]
-    plt.scatter(subset['Recency'], subset['Monetary'],
-                label=label, color=color, alpha=0.7, edgecolor='k', s=60)
+    # Top25
+    plt.figure(figsize=(6,4))
+    sns.histplot(top25,bins=20,kde=True,color='red',edgecolor='black',stat='density')
+    plt.title('Top25 High Spenders')
+    plt.tight_layout()
+    plt.savefig(os.path.join(DISTRIBUTION_DIR,f"{column}_top25.png"),dpi=200)
+    plt.close()
 
-centroids_df = pd.DataFrame(centroids, columns=['Recency', 'Frequency', 'Monetary'])
-plt.scatter(centroids_df['Recency'], centroids_df['Monetary'],
-            color='red', marker='X', s=200, label='Centroids')
+    # Bottom25
+    plt.figure(figsize=(6,4))
+    sns.histplot(bottom25,bins=20,kde=True,color='blue',edgecolor='black',stat='density')
+    plt.title('Bottom25 Low Value')
+    plt.tight_layout()
+    plt.savefig(os.path.join(DISTRIBUTION_DIR,f"{column}_bottom25.png"),dpi=200)
+    plt.close()
 
-plt.title('Customer Segments (RFM)')
-plt.xlabel('Recency (days since last purchase)')
-plt.ylabel('Monetary (total spend)')
-plt.legend(title='Segment', fontsize=9)
-plt.tight_layout()
-plt.savefig(os.path.join(OUTPUT_DIR, 'rfm_segmentation_tableau_ready.png'), dpi=200)
-plt.close()
+# Apply distribution plots to all RFM features
+for col in ['Recency','Frequency','Monetary']:
+    plot_distribution_with_iqr(rfm,col)  # Basic distribution
+    plot_all_distributions(rfm,col)  # All 5 plots
 
-# --- PCA Chart ---
-plt.figure(figsize=(8,5))
-for label, color in segment_palette.items():
-    subset = rfm[rfm['SegmentLabel'] == label]
-    plt.scatter(subset['PCA1'], subset['PCA2'], 
-                label=label, color=color, alpha=0.8, edgecolor='k', s=60)
+# ============================
+# GAUSSIAN PROCESS REGRESSION (GPR)
+# ============================
+print("🔥 Training GPR model...")
+X = rfm_scaled[:,:2]  # Features: Recency & Frequency
+y = rfm['Monetary'].values  # Target: Monetary
+kernel = C(1.0)*(RBF(1.0)) + WhiteKernel()  # Kernel definition
+gpr = GaussianProcessRegressor(kernel=kernel, normalize_y=True, random_state=42)  # Instantiate GPR
+gpr.fit(X,y)  # Fit model
+y_pred, y_std = gpr.predict(X, return_std=True)  # Predict with uncertainty
+rfm['GPR_Predicted_Monetary'] = y_pred  # Store predicted values
+rfm['GPR_Uncertainty'] = y_std  # Store uncertainties
+rmse = np.sqrt(mean_squared_error(y, y_pred))  # Compute RMSE
+r2 = r2_score(y, y_pred)  # Compute R²
+print(f"✅ GPR complete: RMSE={rmse:.2f}, R²={r2:.4f}")
 
-plt.title('Customer Segments (PCA Visualization)')
-plt.xlabel('PCA1 (Customer Value Dimension)')
-plt.ylabel('PCA2 (Engagement Dimension)')
-plt.legend(title='Segment', fontsize=9)
-plt.tight_layout()
-plt.savefig(os.path.join(OUTPUT_DIR, 'pca_segmentation_tableau_ready.png'), dpi=200)
-plt.close()
-
-# ============================================
-# GPR: Recency + Frequency → Predict Monetary
-# ============================================
-print("🔥 Training Gaussian Process Regression (GPR)...")
-
-X = rfm_scaled[:, :2]  # Recency & Frequency
-y = rfm['Monetary'].values
-
-kernel = C(1.0, (1e-3, 1e3)) * RBF(length_scale=1.0, length_scale_bounds=(1e-2, 1e2)) + WhiteKernel()
-gpr = GaussianProcessRegressor(kernel=kernel, alpha=1e-6, normalize_y=True, n_restarts_optimizer=3, random_state=42)
-gpr.fit(X, y)
-y_pred, y_std = gpr.predict(X, return_std=True)
-
-rfm['GPR_Predicted_Monetary'] = y_pred
-rfm['GPR_Uncertainty'] = y_std
-
-rmse = np.sqrt(mean_squared_error(y, y_pred))
-r2 = r2_score(y, y_pred)
-
-print(f"✅ GPR trained:")
-print(f"   • RMSE: {rmse:.2f}")
-print(f"   • R²:   {r2:.4f}")
-print(f"   • Kernel: {gpr.kernel_}")
-
-# --- GPR Surface Plot ---
-r = np.linspace(X[:, 0].min(), X[:, 0].max(), 50)
-f = np.linspace(X[:, 1].min(), X[:, 1].max(), 50)
-R, F = np.meshgrid(r, f)
-X_grid = np.column_stack([R.ravel(), F.ravel()])
-Y_mean, Y_std = gpr.predict(X_grid, return_std=True)
-Y_mean = Y_mean.reshape(R.shape)
+# ============================
+# AUTOMATED GPR SURFACE PLOTS WITH TOP25/BOTTOM25
+# ============================
+r = np.linspace(X[:,0].min(),X[:,0].max(),50)  # Recency grid
+f = np.linspace(X[:,1].min(),X[:,1].max(),50)  # Frequency grid
+R,F = np.meshgrid(r,f)  # Create meshgrid
+X_grid = np.column_stack([R.ravel(), F.ravel()])  # Stack grid points
+Y_mean,Y_std = gpr.predict(X_grid,return_std=True)  # Predict on grid
+Y_mean = Y_mean.reshape(R.shape)  # Reshape for plotting
 Y_std = Y_std.reshape(R.shape)
 
+# Identify Top25 and Bottom25 monetary customers
+q1,q3 = np.percentile(rfm['Monetary'],[25,75])
+top25_mask = (rfm['Monetary'] >= q3)
+bottom25_mask = (rfm['Monetary'] <= q1)
+
+# 3D surface plot
 fig = plt.figure(figsize=(8,6))
-ax = fig.add_subplot(111, projection='3d')
-ax.plot_surface(R, F, Y_mean, cmap='viridis', alpha=0.8)
+ax = fig.add_subplot(111,projection='3d')
+ax.plot_surface(R,F,Y_mean,cmap='viridis',alpha=0.8)  # GPR surface
+ax.scatter(X[top25_mask,0],X[top25_mask,1],y[top25_mask],color='red',label='Top25',s=50)
+ax.scatter(X[bottom25_mask,0],X[bottom25_mask,1],y[bottom25_mask],color='blue',label='Bottom25',s=50)
 ax.set_xlabel('Recency (scaled)')
 ax.set_ylabel('Frequency (scaled)')
-ax.set_zlabel('Predicted Monetary')
-ax.set_title('GPR Predicted Monetary Surface')
+ax.set_zlabel('Monetary')
+ax.set_title('GPR Surface with Top25/Bottom25 Highlighted')
+ax.legend()
 plt.tight_layout()
-plt.savefig(os.path.join(OUTPUT_DIR, 'gpr_predicted_surface.png'), dpi=200)
+plt.savefig(os.path.join(OUTPUT_DIR,'gpr_surface_top_bottom25.png'),dpi=200)
 plt.close()
 
-# --- GPR Uncertainty Heatmap ---
-plt.figure(figsize=(6,5))
-plt.contourf(R, F, Y_std, levels=20, cmap='coolwarm')
-plt.colorbar(label='Prediction Std. Dev. (Uncertainty)')
-plt.xlabel('Recency (scaled)')
-plt.ylabel('Frequency (scaled)')
-plt.title('GPR Prediction Uncertainty')
-plt.tight_layout()
-plt.savefig(os.path.join(OUTPUT_DIR, 'gpr_uncertainty_heatmap.png'), dpi=200)
-plt.close()
-
-# ============================================
-# EXPORT DATA
-# ============================================
-rfm.to_csv(csv_output_path, index=False)
-rfm.to_excel(xlsx_output_path, index=False)
-
-print(f"""
-✅ RFM segmentation and GPR complete!
-------------------------------------
-📊 Tableau-ready outputs:
-  • CSV:  {csv_output_path}
-  • XLSX: {xlsx_output_path}
-
-📈 Charts generated:
-  • RFM Segmentation:      rfm_segmentation_tableau_ready.png
-  • PCA Segmentation:      pca_segmentation_tableau_ready.png
-  • GPR Surface:           gpr_predicted_surface.png
-  • GPR Uncertainty:       gpr_uncertainty_heatmap.png
-  • Distributions:         {distribution_dir}
-
-📄 Cluster Summary:
-{cluster_summary[['Label', 'Recency', 'Frequency', 'Monetary', 'Count']]}
-""")
+# ============================
+# EXPORT FINAL DATA
+# ============================
+rfm.to_csv(os.path.join(OUTPUT_DIR,'customers_segmented_v9.csv'),index=False)  # Save CSV
+rfm.to_excel(os.path.join(OUTPUT_DIR,'customers_segmented_v9.xlsx'),index=False)  # Save Excel
+print("✅ All outputs saved successfully.")
