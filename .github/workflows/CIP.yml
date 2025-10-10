@@ -1,0 +1,53 @@
+name: CIP
+
+on:
+  push:
+    branches:
+      - customer-Intelligence-pipeline
+  workflow_dispatch:
+
+permissions:
+  contents: write  # Allow pushing changes back to the repo
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        python-version: [3.10]
+
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v3
+
+      - name: 🐍 Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: 📦 Cache pip dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: 📦 Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: 🚀 Run Customer Segmentation script
+        run: |
+          python src/Customer-Intelligence-GP.py
+
+      - name: ✅ Commit and push outputs to branch
+        run: |
+          git config --global user.name 'github-actions'
+          git config --global user.email 'actions@github.com'
+          git pull origin ${{ github.ref_name }} --ff-only
+          git add outputs/
+          git commit -m "📦 Add generated outputs from workflow run" || echo "No changes to commit"
+          git push origin HEAD:${{ github.ref_name }}
