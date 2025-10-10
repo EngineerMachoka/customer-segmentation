@@ -1,0 +1,7 @@
+CustomerID,Recency,Frequency,Monetary,Segment,PCA1,PCA2,SegmentLabel,ChurnStatus,ValueCategory,MarketingSegment,Rank,CustomerFlag
+12501.0,336,1,2169.39,0,-1.2093618485584274,2.161648168539812,Churn Risk,Churned,High Value,At-Risk High Value,816.0,Normal
+12967.0,357,2,1660.9,0,-1.2373604483850216,2.345913136963963,Churn Risk,Churned,High Value,At-Risk High Value,1084.0,Normal
+15332.0,365,4,1661.06,0,-1.0923719234374938,2.4525655858711053,Churn Risk,Churned,High Value,At-Risk High Value,1083.0,Normal
+16754.0,371,1,2002.4,0,-1.3543723089578177,2.4708572844872747,Churn Risk,Churned,High Value,At-Risk High Value,894.0,Normal
+17406.0,332,3,2184.42,0,-1.0176358923800004,2.160377525607561,Churn Risk,Churned,High Value,At-Risk High Value,812.0,Normal
+17850.0,371,34,5391.21,0,1.778664705758043,3.188582294287067,Churn Risk,Churned,High Value,At-Risk High Value,248.0,Normal
