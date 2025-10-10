@@ -1,53 +1,54 @@
-name: CIP
+name: Customer Intelligence Pipeline
 
 on:
   push:
-    branches:
-      - customer-Intelligence-pipeline
+    branches: [ "customer-Intelligence-pipeline" ]
   workflow_dispatch:
 
-permissions:
-  contents: write  # Allow pushing changes back to the repo
-
 jobs:
-  build:
+  run-pipeline:
     runs-on: ubuntu-latest
 
-    strategy:
-      matrix:
-        python-version: [3.13.7]
-
     steps:
-      - name: 📥 Checkout repository
-        uses: actions/checkout@v3
+      - name: ⬇️ Checkout repository
+        uses: actions/checkout@v4
 
       - name: 🐍 Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.11"
 
-      - name: 📦 Cache pip dependencies
-        uses: actions/cache@v3
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-
-
-      - name: 📦 Install Python dependencies
+      - name: 📦 Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: 🚀 Run Customer Segmentation script
+      - name: 🚀 Run segmentation pipeline
         run: |
-          python src/Customer-Intelligence-GP.py
+          python src/customer_segmentation_master.py
 
-      - name: ✅ Commit and push outputs to branch
+      - name: 🧹 Remove large model files before commit
         run: |
-          git config --global user.name 'github-actions'
-          git config --global user.email 'actions@github.com'
-          git pull origin ${{ github.ref_name }} --ff-only
-          git add outputs/
-          git commit -m "📦 Add generated outputs from workflow run" || echo "No changes to commit"
-          git push origin HEAD:${{ github.ref_name }}
+          echo "🧹 Cleaning .pkl model artifacts..."
+          find outputs -type f -name "*.pkl" -delete
+          echo "✅ Removed .pkl files from outputs to avoid GitHub size limit"
+
+      - name: 🕓 Get current timestamp
+        id: datetime
+        run: echo "timestamp=$(date +'%Y%m%d_%H%M')" >> $GITHUB_OUTPUT
+
+      - name: 🗃️ Commit & push generated outputs (PNG, CSV, XLSX only)
+        run: |
+          git config --global user.name "github-actions"
+          git config --global user.email "github-actions@github.com"
+          mkdir -p outputs/archive_${{ steps.datetime.outputs.timestamp }}
+          
+          # Move all new output files (except .pkl) into an archive folder
+          find outputs -maxdepth 1 -type f ! -name "*.pkl" -exec mv {} outputs/archive_${{ steps.datetime.outputs.timestamp }}/ \;
+          cp -r outputs/distributions outputs/archive_${{ steps.datetime.outputs.timestamp }}/distributions || true
+          cp -r outputs/segments outputs/archive_${{ steps.datetime.outputs.timestamp }}/segments || true
+
+          cd outputs
+          git add archive_${{ steps.datetime.outputs.timestamp }}/
+          git commit -m "📦 Add generated outputs (no model binaries) from workflow run"
+          git push origin customer-Intelligence-pipeline
