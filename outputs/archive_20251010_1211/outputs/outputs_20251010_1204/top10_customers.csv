@@ -1,0 +1,11 @@
+CustomerID,Recency,Frequency,Monetary,Cluster,ClusterLabel
+14646.0,1,73,280206.02,1,High Value
+18102.0,0,60,259657.3,1,High Value
+17450.0,7,46,194390.79,1,High Value
+16446.0,0,2,168472.5,1,High Value
+14911.0,0,201,143711.17,1,High Value
+12415.0,23,21,124914.53,1,High Value
+14156.0,9,55,117210.08,1,High Value
+17511.0,2,31,91062.38,1,High Value
+16029.0,38,63,80850.84,1,High Value
+12346.0,325,1,77183.6,0,Churn Risk
