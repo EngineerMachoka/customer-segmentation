@@ -27,7 +27,7 @@ jobs:
       - name: 🚀 Run Customer Intelligence GP pipeline
         run: |
           echo -e "\033[1;32m🚀 Running Customer Intelligence GP pipeline...\033[0m"
-          python customer-Intelligence-pipeline/src/Customer-Intelligence-GP.py
+          python src/Customer-Intelligence-GP.py
 
       - name: 🧹 Remove large model files before commit
         run: |
