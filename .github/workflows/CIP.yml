@@ -25,7 +25,7 @@ jobs:
 
       - name: 🚀 Run segmentation pipeline
         run: |
-          python src/customer_segmentation_master.py
+          python src/Customer-Intelligence-GP.py
 
       - name: 🧹 Remove large model files before commit
         run: |
