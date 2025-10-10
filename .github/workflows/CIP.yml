@@ -1,4 +1,4 @@
-name: Customer Intelligence Pipeline
+name: Customer Intelligence GP Pipeline
 
 on:
   push:
@@ -20,35 +20,54 @@ jobs:
 
       - name: 📦 Install dependencies
         run: |
+          echo -e "\033[1;34m📦 Installing Python dependencies...\033[0m"
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: 🚀 Run segmentation pipeline
+      - name: 🚀 Run Customer Intelligence GP pipeline
         run: |
-          python src/Customer-Intelligence-GP.py
+          echo -e "\033[1;32m🚀 Running Customer Intelligence GP pipeline...\033[0m"
+          python customer-Intelligence-pipeline/src/Customer-Intelligence-GP.py
 
       - name: 🧹 Remove large model files before commit
         run: |
-          echo "🧹 Cleaning .pkl model artifacts..."
-          find outputs -type f -name "*.pkl" -delete
-          echo "✅ Removed .pkl files from outputs to avoid GitHub size limit"
+          echo -e "\033[1;33m🧹 Removing .pkl model artifacts (too large for GitHub)...\033[0m"
+          find outputs -type f -name "*.pkl" -delete || true
 
       - name: 🕓 Get current timestamp
         id: datetime
         run: echo "timestamp=$(date +'%Y%m%d_%H%M')" >> $GITHUB_OUTPUT
 
+      - name: 📁 Find latest output folder
+        id: latest_output
+        run: |
+          latest=$(ls -td outputs/outputs_* | head -1)
+          echo "latest_folder=$latest" >> $GITHUB_OUTPUT
+          echo -e "\033[1;34m📁 Latest output folder detected: $latest\033[0m"
+
       - name: 🗃️ Commit & push generated outputs (PNG, CSV, XLSX only)
         run: |
+          echo -e "\033[1;35m🗃️ Preparing to archive new outputs...\033[0m"
           git config --global user.name "github-actions"
           git config --global user.email "github-actions@github.com"
-          mkdir -p outputs/archive_${{ steps.datetime.outputs.timestamp }}
-          
-          # Move all new output files (except .pkl) into an archive folder
-          find outputs -maxdepth 1 -type f ! -name "*.pkl" -exec mv {} outputs/archive_${{ steps.datetime.outputs.timestamp }}/ \;
-          cp -r outputs/distributions outputs/archive_${{ steps.datetime.outputs.timestamp }}/distributions || true
-          cp -r outputs/segments outputs/archive_${{ steps.datetime.outputs.timestamp }}/segments || true
 
-          cd outputs
-          git add archive_${{ steps.datetime.outputs.timestamp }}/
-          git commit -m "📦 Add generated outputs (no model binaries) from workflow run"
-          git push origin customer-Intelligence-pipeline
+          timestamp="${{ steps.datetime.outputs.timestamp }}"
+          latest="${{ steps.latest_output.outputs.latest_folder }}"
+          archive_dir="outputs/archive_${timestamp}"
+
+          mkdir -p "$archive_dir"
+          echo -e "\033[1;36m📦 Archiving outputs from: $latest -> $archive_dir\033[0m"
+
+          # Copy Tableau-ready files (images, CSVs, Excel workbooks)
+          find "$latest" -type f \( -name "*.png" -o -name "*.csv" -o -name "*.xlsx" \) -exec cp --parents {} "$archive_dir" \;
+
+          echo -e "\033[1;32m✅ Files copied successfully to archive.\033[0m"
+
+          git add "$archive_dir" || true
+          if git diff --cached --quiet; then
+            echo -e "\033[1;33m⚠️ No new files to commit.\033[0m"
+          else
+            git commit -m "📊 Auto-commit: archived outputs at ${timestamp}"
+            git push origin customer-Intelligence-pipeline
+            echo -e "\033[1;32m✅ Outputs successfully pushed to GitHub.\033[0m"
+          fi
