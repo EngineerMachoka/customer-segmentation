@@ -1,319 +1,191 @@
-"""
-Customer Segmentation & Predictive Modeling – Fully Commented v9
----------------------------------------------------------------
-This script:
-• Computes RFM metrics
-• Performs KMeans clustering
-• Reduces dimensions using PCA
-• Generates distribution plots (Full, IQR, Extremes, Top25, Bottom25)
-• Trains Gaussian Process Regression (GPR)
-• Generates automated GPR surface plots highlighting Top25/Bottom25
-• Renames existing output files to prevent overwriting
-• Contains inline + block comments explaining every step
-"""
-
-# ============================
-# IMPORT LIBRARIES
-# ============================
-import os  # For file/directory operations
-import random  # For generating random numbers for file renaming
-import pandas as pd  # For data manipulation
-import numpy as np  # For numerical computations
-import matplotlib.pyplot as plt  # For plotting
-import seaborn as sns  # Enhanced plotting features
-from sklearn.preprocessing import StandardScaler  # Standardize features
-from sklearn.cluster import KMeans  # Clustering algorithm
-from sklearn.metrics import silhouette_score, mean_squared_error, r2_score  # Model evaluation metrics
+import os  # File operations
+import random  # Random numbers for renaming
+import pandas as pd  # Data manipulation and handling
+import numpy as np  # Numerical operations
+import matplotlib.pyplot as plt  # Plotting library
+import seaborn as sns  # Advanced visualization
+from sklearn.preprocessing import StandardScaler  # Feature scaling for clustering
+from sklearn.cluster import KMeans  # KMeans clustering algorithm
+from sklearn.metrics import silhouette_score, mean_squared_error, r2_score  # Evaluation metrics
 from sklearn.decomposition import PCA  # Dimensionality reduction
 from sklearn.gaussian_process import GaussianProcessRegressor  # Gaussian Process Regression
 from sklearn.gaussian_process.kernels import RBF, ConstantKernel as C, WhiteKernel  # GPR kernels
-from scipy.stats import norm  # For Gaussian fitting
-import joblib  # For saving/loading models
+from scipy.stats import norm  # Gaussian fitting
+import joblib  # Save/load models
 from mpl_toolkits.mplot3d import Axes3D  # 3D plotting
 
-# ============================
-# CONFIGURATION & PATHS
-# ============================
-AUTO_MODE = True  # If True, script runs automatically without manual input
-
-# Define directories
+# Configuration paths
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))  # Current script folder
 BASE_DIR = os.path.abspath(os.path.join(SCRIPT_DIR, '..'))  # Project root folder
 DATA_DIR = os.path.join(BASE_DIR, 'data')  # Input data folder
 OUTPUT_DIR = os.path.join(BASE_DIR, 'outputs')  # Output folder
-DISTRIBUTION_DIR = os.path.join(OUTPUT_DIR, 'distributions')  # Folder for distribution plots
+DISTRIBUTION_DIR = os.path.join(OUTPUT_DIR, 'distributions')  # Distribution plots folder
 
-# Ensure directories exist
-os.makedirs(DATA_DIR, exist_ok=True)
-os.makedirs(OUTPUT_DIR, exist_ok=True)
-os.makedirs(DISTRIBUTION_DIR, exist_ok=True)
+os.makedirs(DATA_DIR, exist_ok=True)  # Ensure input folder exists
+os.makedirs(OUTPUT_DIR, exist_ok=True)  # Ensure output folder exists
+os.makedirs(DISTRIBUTION_DIR, exist_ok=True)  # Ensure distribution folder exists
 
-# ============================
-# RENAME EXISTING FILES TO AVOID OVERWRITE
-# ============================
-def rename_existing_files(folder):
-    """
-    Rename all existing files in a folder by adding a random numeric prefix.
-    This prevents overwriting previously generated outputs.
-    """
-    for root, dirs, files in os.walk(folder):  # Traverse all files in folder
-        for filename in files:  # Loop through each file
+# Rename existing files to avoid overwrite
+def rename_existing_files(folder):  # Function to rename files with random prefix
+    for root, dirs, files in os.walk(folder):  # Iterate through all files in folder
+        for filename in files:
             old_path = os.path.join(root, filename)  # Original file path
-            rand_prefix = str(random.randint(1000, 9999))  # Random 4-digit prefix
-            new_filename = f"{rand_prefix}_{filename}"  # New file name
-            new_path = os.path.join(root, new_filename)  # New full path
+            rand_prefix = str(random.randint(1000, 9999))  # Generate random prefix
+            new_filename = f"{rand_prefix}_{filename}"  # Create new filename
+            new_path = os.path.join(root, new_filename)  # New file path
             try:
                 os.rename(old_path, new_path)  # Rename file
-                print(f"📂 Renamed existing file → {new_filename}")  # Confirmation
-            except Exception as e:  # Catch errors
-                print(f"⚠️ Could not rename {filename}: {e}")  # Error message
+                print(f"📂 Renamed existing file → {new_filename}")  # Print confirmation
+            except Exception as e:
+                print(f"⚠️ Could not rename {filename}: {e}")  # Handle errors
 
-# Apply renaming to OUTPUT_DIR
-rename_existing_files(OUTPUT_DIR)
+rename_existing_files(OUTPUT_DIR)  # Execute renaming to avoid overwriting outputs
 
-# ============================
-# LOAD & CLEAN DATA
-# ============================
-DATA_FILE = 'Online Retail.xlsx'  # Input data filename
-DATA_PATH = os.path.join(DATA_DIR, DATA_FILE)  # Full path to input file
+# Load data
+DATA_FILE = 'Online Retail.xlsx'  # Data filename
+DATA_PATH = os.path.join(DATA_DIR, DATA_FILE)  # Full data path
+if not os.path.exists(DATA_PATH):  # Check if file exists
+    raise FileNotFoundError(f"❌ Data file not found: {DATA_PATH}")  # Raise error if missing
 
-# Check if the file exists
-if not os.path.exists(DATA_PATH):
-    raise FileNotFoundError(f"❌ Data file not found: {DATA_PATH}")  # Stop execution if missing
+print("📦 Loading dataset...")  # Notify loading
+data = pd.read_excel(DATA_PATH)  # Load Excel data
+data.drop_duplicates(inplace=True)  # Remove duplicates
+data.dropna(subset=['CustomerID'], inplace=True)  # Remove missing CustomerID
+data['total_spent'] = data['UnitPrice'] * data['Quantity']  # Calculate total spending
+data = data[data['total_spent'] > 0]  # Remove non-positive spend
+data['InvoiceDate'] = pd.to_datetime(data['InvoiceDate'])  # Convert to datetime
+reference_date = data['InvoiceDate'].max()  # Latest date as reference
 
-print("📦 Loading dataset...")  # Inform user
-
-# Load Excel data into pandas DataFrame
-data = pd.read_excel(DATA_PATH)
-data.drop_duplicates(inplace=True)  # Remove duplicate rows
-data.dropna(subset=['CustomerID'], inplace=True)  # Remove rows missing CustomerID
-
-# Calculate total spend per transaction
-data['total_spent'] = data['UnitPrice'] * data['Quantity']
-
-# Keep only positive spend transactions
-data = data[data['total_spent'] > 0]
-
-# Convert InvoiceDate to datetime format
-data['InvoiceDate'] = pd.to_datetime(data['InvoiceDate'])
-
-# Reference date is the latest invoice date
-reference_date = data['InvoiceDate'].max()
-
-# ============================
-# COMPUTE RFM METRICS
-# ============================
-print("🧮 Computing RFM metrics...")
-
-# Aggregate data by CustomerID
+# Compute RFM metrics
+print("🧮 Computing RFM metrics...")  # Notify RFM computation
 rfm = data.groupby('CustomerID').agg(
     Recency=('InvoiceDate', lambda x: (reference_date - x.max()).days),  # Days since last purchase
-    Frequency=('InvoiceNo', 'nunique'),  # Count of unique invoices
-    Monetary=('total_spent', 'sum')  # Total monetary spend
-).reset_index()  # Reset index to make CustomerID a column
+    Frequency=('InvoiceNo', 'nunique'),  # Number of unique invoices
+    Monetary=('total_spent', 'sum')  # Total spending per customer
+).reset_index()  # Reset index to DataFrame
 
-# Standardize RFM features
 scaler = StandardScaler()  # Initialize scaler
-rfm_scaled = scaler.fit_transform(rfm[['Recency','Frequency','Monetary']])  # Scale features
+rfm_scaled = scaler.fit_transform(rfm[['Recency','Frequency','Monetary']])  # Standardize RFM
 
-# ============================
-# FIND OPTIMAL NUMBER OF CLUSTERS
-# ============================
-print("🔍 Determining optimal cluster count...")
+# Determine optimal clusters
+print("🔍 Determining optimal cluster count...")  # Notify cluster selection
+inertia = []  # List for inertia values
+silhouette_scores = []  # List for silhouette scores
+for k in range(2,11):  # Test clusters from 2 to 10
+    km = KMeans(n_clusters=k, n_init=10, random_state=42)  # Initialize KMeans
+    labels = km.fit_predict(rfm_scaled)  # Fit and predict clusters
+    inertia.append(km.inertia_)  # Append inertia
+    silhouette_scores.append(silhouette_score(rfm_scaled, labels))  # Append silhouette score
+metrics_df = pd.DataFrame({'k':range(2,11),'Inertia':inertia,'Silhouette':silhouette_scores})  # Save metrics
+metrics_df.to_csv(os.path.join(OUTPUT_DIR,'kmeans_metrics_full.csv'), index=False)  # Export metrics
+optimal_k = np.argmax(silhouette_scores)+2  # Best cluster based on silhouette
+print(f"✅ Optimal clusters determined: {optimal_k}")  # Print result
 
-# Initialize lists to store KMeans metrics
-inertia = []
-silhouette_scores = []
-
-# Loop through cluster counts from 2 to 10
-for k in range(2, 11):
-    km = KMeans(n_clusters=k, n_init=10, random_state=42)  # KMeans instance
-    labels = km.fit_predict(rfm_scaled)  # Fit model and assign cluster labels
-    inertia.append(km.inertia_)  # Record inertia
-    silhouette_scores.append(silhouette_score(rfm_scaled, labels))  # Record silhouette score
-
-# Save KMeans metrics to CSV
-metrics_df = pd.DataFrame({'k':range(2,11),'Inertia':inertia,'Silhouette':silhouette_scores})
-metrics_df.to_csv(os.path.join(OUTPUT_DIR,'kmeans_metrics_v9.csv'), index=False)
-
-# Select optimal K based on highest silhouette score
-optimal_k = np.argmax(silhouette_scores) + 2
-print(f"✅ Optimal clusters determined: {optimal_k}")
-
-# ============================
-# FINAL KMEANS CLUSTERING
-# ============================
-kmeans = KMeans(n_clusters=optimal_k, n_init=10, random_state=42)  # Initialize KMeans
+# Final KMeans clustering
+kmeans = KMeans(n_clusters=optimal_k, n_init=10, random_state=42)  # Initialize final KMeans
 rfm['Segment'] = kmeans.fit_predict(rfm_scaled)  # Assign cluster labels
-centroids = scaler.inverse_transform(kmeans.cluster_centers_)  # Transform centroids back to original scale
-
-# Save models
+centroids = scaler.inverse_transform(kmeans.cluster_centers_)  # Centroids in original scale
 joblib.dump(scaler, os.path.join(OUTPUT_DIR,'rfm_scaler.pkl'))  # Save scaler
-joblib.dump(kmeans, os.path.join(OUTPUT_DIR,'kmeans_model.pkl'))  # Save KMeans model
+joblib.dump(kmeans, os.path.join(OUTPUT_DIR,'kmeans_model.pkl'))  # Save model
 
-# ============================
-# PCA DIMENSION REDUCTION
-# ============================
+# PCA visualization
 pca = PCA(n_components=2, random_state=42)  # Initialize PCA
-rfm_pca = pca.fit_transform(rfm_scaled)  # Reduce scaled RFM to 2 dimensions
-rfm['PCA1'], rfm['PCA2'] = rfm_pca[:,0], rfm_pca[:,1]  # Store PCA components in DataFrame
+rfm_pca = pca.fit_transform(rfm_scaled)  # Fit PCA
+rfm['PCA1'], rfm['PCA2'] = rfm_pca[:,0], rfm_pca[:,1]  # Store PCA components
 
-# ============================
-# ASSIGN HUMAN-READABLE CLUSTER LABELS
-# ============================
+# Cluster summary with tuple-based aggregation
 cluster_summary = rfm.groupby('Segment').agg(
-    Recency='mean',
-    Frequency='mean',
-    Monetary='mean',
-    CustomerID='count'
-).rename(columns={'CustomerID':'Count'}).round(1)
+    Recency=('Recency','mean'),  # Average recency per cluster
+    Frequency=('Frequency','mean'),  # Average frequency
+    Monetary=('Monetary','mean'),  # Average monetary
+    Count=('CustomerID','count')  # Count customers per cluster
+).round(1)  # Round to 1 decimal
 
-def assign_segment_labels(summary_df):
-    """
-    Rank clusters and assign readable labels: High Value, Loyal, Churn Risk, Regular
-    """
-    labels = {}
-    monetary_rank = summary_df['Monetary'].rank(method='min', ascending=False)
-    recency_rank = summary_df['Recency'].rank(method='min')
-    frequency_rank = summary_df['Frequency'].rank(method='min', ascending=False)
-    for idx in summary_df.index:
+# Assign human-readable labels
+def assign_segment_labels(summary_df):  # Function to label clusters
+    labels = {}  # Dictionary for labels
+    monetary_rank = summary_df['Monetary'].rank(method='min', ascending=False)  # Rank monetary
+    recency_rank = summary_df['Recency'].rank(method='min')  # Rank recency
+    frequency_rank = summary_df['Frequency'].rank(method='min', ascending=False)  # Rank frequency
+    for idx in summary_df.index:  # Iterate clusters
         if monetary_rank[idx]==1:
-            labels[idx]='High Value'
+            labels[idx]='High Value'  # Top monetary
         elif frequency_rank[idx]==1:
-            labels[idx]='Loyal'
+            labels[idx]='Loyal'  # Top frequency
         elif recency_rank[idx]==summary_df['Recency'].rank().max():
-            labels[idx]='Churn Risk'
+            labels[idx]='Churn Risk'  # Highest recency
         else:
-            labels[idx]='Regular'
-    return labels
+            labels[idx]='Regular'  # Default label
+    return labels  # Return mapping
 
-# Map labels to clusters
-segment_labels = assign_segment_labels(cluster_summary)
-rfm['SegmentLabel'] = rfm['Segment'].map(segment_labels)
-cluster_summary['Label'] = cluster_summary.index.map(segment_labels)
-cluster_summary.to_csv(os.path.join(OUTPUT_DIR,'cluster_profiles_v9.csv'),index=False)
+segment_labels = assign_segment_labels(cluster_summary)  # Generate labels
+rfm['SegmentLabel'] = rfm['Segment'].map(segment_labels)  # Map to RFM
+cluster_summary['Label'] = cluster_summary.index.map(segment_labels)  # Map to summary
+cluster_summary.to_csv(os.path.join(OUTPUT_DIR,'cluster_profiles_full.csv'), index=False)  # Export
 
-# ============================
-# DISTRIBUTION PLOTS
-# ============================
-def plot_distribution_with_iqr(data,column):
-    """Plot histogram with Gaussian fit and IQR lines"""
-    plt.figure(figsize=(7,4))
-    sns.histplot(data[column],bins=30,kde=True,color='skyblue',edgecolor='black',stat='density')
-    mu,std = norm.fit(data[column])
-    x=np.linspace(data[column].min(),data[column].max(),100)
-    plt.plot(x,norm.pdf(x,mu,std),'r--',label='Gaussian Fit')
-    q1,q3 = np.percentile(data[column],[25,75])
-    plt.axvline(q1,color='green',linestyle='--',label='Q1')
-    plt.axvline(q3,color='purple',linestyle='--',label='Q3')
-    plt.title(f'{column} Distribution')
-    plt.legend()
-    plt.tight_layout()
-    plt.savefig(os.path.join(DISTRIBUTION_DIR,f"{column}_distribution.png"),dpi=200)
-    plt.close()
+# Distribution plot functions
+def plot_distribution_with_iqr(data,column):  # Function for IQR distribution plot
+    plt.figure(figsize=(7,4))  # Figure size
+    sns.histplot(data[column], bins=30, kde=True, color='skyblue', edgecolor='black', stat='density')  # Histogram
+    mu,std = norm.fit(data[column])  # Fit Gaussian
+    x=np.linspace(data[column].min(),data[column].max(),100)  # X values for Gaussian
+    plt.plot(x,norm.pdf(x,mu,std),'r--',label='Gaussian Fit')  # Gaussian overlay
+    q1,q3 = np.percentile(data[column],[25,75])  # Compute IQR
+    plt.axvline(q1,color='green',linestyle='--',label='Q1')  # Q1 line
+    plt.axvline(q3,color='purple',linestyle='--',label='Q3')  # Q3 line
+    plt.title(f'{column} Distribution')  # Title
+    plt.legend()  # Show legend
+    plt.tight_layout()  # Adjust layout
+    plt.savefig(os.path.join(DISTRIBUTION_DIR,f"{column}_distribution.png"), dpi=200)  # Save plot
+    plt.close()  # Close figure
 
-def plot_all_distributions(data,column):
-    """Generate Full, IQR, Extremes, Top25, Bottom25 plots"""
-    q1,q3 = np.percentile(data[column],[25,75])
-    full = data[column]
-    iqr = full[(full>=q1)&(full<=q3)]
-    extremes = pd.concat([full[full<=q1],full[full>=q3]])
-    top25 = full[full>=q3]
-    bottom25 = full[full<=q1]
+def plot_all_distributions(data,column):  # Generate full distribution set
+    q1,q3 = np.percentile(data[column],[25,75])  # Compute quartiles
+    full = data[column]  # Full data
+    iqr = full[(full>=q1)&(full<=q3)]  # Middle 50%
+    extremes = pd.concat([full[full<=q1], full[full>=q3]])  # Extremes
+    top25 = full[full>=q3]  # Top quartile
+    bottom25 = full[full<=q1]  # Bottom quartile
 
     # Full vs IQR
-    fig,axes = plt.subplots(1,2,figsize=(10,4))
-    sns.histplot(full,bins=30,kde=True,color='skyblue',ax=axes[0],edgecolor='black',stat='density')
-    axes[0].set_title('Full')
-    sns.histplot(iqr,bins=20,kde=True,color='orange',ax=axes[1],edgecolor='black',stat='density')
-    axes[1].set_title('IQR (Middle 50%)')
-    plt.tight_layout()
-    plt.savefig(os.path.join(DISTRIBUTION_DIR,f"{column}_iqr_comparison.png"),dpi=200)
-    plt.close()
+    fig,axes = plt.subplots(1,2,figsize=(10,4))  # Two panels
+    sns.histplot(full,bins=30,kde=True,color='skyblue',ax=axes[0],edgecolor='black',stat='density')  # Full
+    axes[0].set_title('Full')  # Title
+    sns.histplot(iqr,bins=20,kde=True,color='orange',ax=axes[1],edgecolor='black',stat='density')  # IQR
+    axes[1].set_title('IQR (Middle 50%)')  # Title
+    plt.tight_layout()  # Adjust layout
+    plt.savefig(os.path.join(DISTRIBUTION_DIR,f"{column}_iqr_comparison.png"),dpi=200)  # Save
+    plt.close()  # Close
 
-    # Extremes contrast
-    fig,axes = plt.subplots(1,3,figsize=(14,4))
-    sns.histplot(full,bins=30,kde=True,color='skyblue',ax=axes[0],edgecolor='black',stat='density')
-    axes[0].set_title('Full')
-    sns.histplot(iqr,bins=20,kde=True,color='orange',ax=axes[1],edgecolor='black',stat='density')
-    axes[1].set_title('IQR')
-    sns.histplot(extremes,bins=20,kde=True,color='crimson',ax=axes[2],edgecolor='black',stat='density')
-    axes[2].set_title('Extremes (Top+Bottom 25%)')
-    plt.tight_layout()
-    plt.savefig(os.path.join(DISTRIBUTION_DIR,f"{column}_extremes_contrast.png"),dpi=200)
-    plt.close()
+    # Extremes vs Full
+    fig,axes = plt.subplots(1,3,figsize=(14,4))  # Three panels
+    sns.histplot(full,bins=30,kde=True,color='skyblue',ax=axes[0],edgecolor='black',stat='density')  # Full
+    axes[0].set_title('Full')  # Title
+    sns.histplot(iqr,bins=20,kde=True,color='orange',ax=axes[1],edgecolor='black',stat='density')  # IQR
+    axes[1].set_title('IQR')  # Title
+    sns.histplot(extremes,bins=20,kde=True,color='crimson',ax=axes[2],edgecolor='black',stat='density')  # Extremes
+    axes[2].set_title('Extremes (Top+Bottom 25%)')  # Title
+    plt.tight_layout()  # Adjust layout
+    plt.savefig(os.path.join(DISTRIBUTION_DIR,f"{column}_extremes_contrast.png"),dpi=200)  # Save
+    plt.close()  # Close
 
     # Top25
-    plt.figure(figsize=(6,4))
-    sns.histplot(top25,bins=20,kde=True,color='red',edgecolor='black',stat='density')
-    plt.title('Top25 High Spenders')
-    plt.tight_layout()
-    plt.savefig(os.path.join(DISTRIBUTION_DIR,f"{column}_top25.png"),dpi=200)
-    plt.close()
+    plt.figure(figsize=(6,4))  # Figure
+    sns.histplot(top25,bins=20,kde=True,color='red',edgecolor='black',stat='density')  # Top25 histogram
+    plt.title('Top25 High Spenders')  # Title
+    plt.tight_layout()  # Layout
+    plt.savefig(os.path.join(DISTRIBUTION_DIR,f"{column}_top25.png"),dpi=200)  # Save
+    plt.close()  # Close
 
     # Bottom25
-    plt.figure(figsize=(6,4))
-    sns.histplot(bottom25,bins=20,kde=True,color='blue',edgecolor='black',stat='density')
-    plt.title('Bottom25 Low Value')
-    plt.tight_layout()
-    plt.savefig(os.path.join(DISTRIBUTION_DIR,f"{column}_bottom25.png"),dpi=200)
-    plt.close()
+    plt.figure(figsize=(6,4))  # Figure
+    sns.histplot(bottom25,bins=20,kde=True,color='blue',edgecolor='black',stat='density')  # Bottom25 histogram
+    plt.title('Bottom25 Low Value')  # Title
+    plt.tight_layout()  # Layout
+    plt.savefig(os.path.join(DISTRIBUTION_DIR,f"{column}_bottom25.png"),dpi=200)  # Save
+    plt.close()  # Close
 
-# Apply distribution plots to all RFM features
-for col in ['Recency','Frequency','Monetary']:
-    plot_distribution_with_iqr(rfm,col)  # Basic distribution
-    plot_all_distributions(rfm,col)  # All 5 plots
-
-# ============================
-# GAUSSIAN PROCESS REGRESSION (GPR)
-# ============================
-print("🔥 Training GPR model...")
-X = rfm_scaled[:,:2]  # Features: Recency & Frequency
-y = rfm['Monetary'].values  # Target: Monetary
-kernel = C(1.0)*(RBF(1.0)) + WhiteKernel()  # Kernel definition
-gpr = GaussianProcessRegressor(kernel=kernel, normalize_y=True, random_state=42)  # Instantiate GPR
-gpr.fit(X,y)  # Fit model
-y_pred, y_std = gpr.predict(X, return_std=True)  # Predict with uncertainty
-rfm['GPR_Predicted_Monetary'] = y_pred  # Store predicted values
-rfm['GPR_Uncertainty'] = y_std  # Store uncertainties
-rmse = np.sqrt(mean_squared_error(y, y_pred))  # Compute RMSE
-r2 = r2_score(y, y_pred)  # Compute R²
-print(f"✅ GPR complete: RMSE={rmse:.2f}, R²={r2:.4f}")
-
-# ============================
-# AUTOMATED GPR SURFACE PLOTS WITH TOP25/BOTTOM25
-# ============================
-r = np.linspace(X[:,0].min(),X[:,0].max(),50)  # Recency grid
-f = np.linspace(X[:,1].min(),X[:,1].max(),50)  # Frequency grid
-R,F = np.meshgrid(r,f)  # Create meshgrid
-X_grid = np.column_stack([R.ravel(), F.ravel()])  # Stack grid points
-Y_mean,Y_std = gpr.predict(X_grid,return_std=True)  # Predict on grid
-Y_mean = Y_mean.reshape(R.shape)  # Reshape for plotting
-Y_std = Y_std.reshape(R.shape)
-
-# Identify Top25 and Bottom25 monetary customers
-q1,q3 = np.percentile(rfm['Monetary'],[25,75])
-top25_mask = (rfm['Monetary'] >= q3)
-bottom25_mask = (rfm['Monetary'] <= q1)
-
-# 3D surface plot
-fig = plt.figure(figsize=(8,6))
-ax = fig.add_subplot(111,projection='3d')
-ax.plot_surface(R,F,Y_mean,cmap='viridis',alpha=0.8)  # GPR surface
-ax.scatter(X[top25_mask,0],X[top25_mask,1],y[top25_mask],color='red',label='Top25',s=50)
-ax.scatter(X[bottom25_mask,0],X[bottom25_mask,1],y[bottom25_mask],color='blue',label='Bottom25',s=50)
-ax.set_xlabel('Recency (scaled)')
-ax.set_ylabel('Frequency (scaled)')
-ax.set_zlabel('Monetary')
-ax.set_title('GPR Surface with Top25/Bottom25 Highlighted')
-ax.legend()
-plt.tight_layout()
-plt.savefig(os.path.join(OUTPUT_DIR,'gpr_surface_top_bottom25.png'),dpi=200)
-plt.close()
-
-# ============================
-# EXPORT FINAL DATA
-# ============================
-rfm.to_csv(os.path.join(OUTPUT_DIR,'customers_segmented_v9.csv'),index=False)  # Save CSV
-rfm.to_excel(os.path.join(OUTPUT_DIR,'customers_segmented_v9.xlsx'),index=False)  # Save Excel
-print("✅ All outputs saved successfully.")
+# Generate plots
+for col in ['Recency','Frequency','Monetary']:  # Iterate RFM columns
+    plot_distribution_with_iqr(rfm,col)  # Basic IQR distribution
+    plot_all_distributions(rfm,col)  # Full set of plots
